@@ -1,0 +1,19 @@
+{
+  "include": [
+    "src",
+    "streamlit_ui",
+    "tools",
+    "log_viewer",
+    "ai_devs_4",
+    "mcp_servers",
+    "*.py"
+  ],
+  "exclude": [
+    ".conda",
+    "**/__pycache__"
+  ],
+  "extraPaths": [
+    "src",
+    "."
+  ]
+}

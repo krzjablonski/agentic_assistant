@@ -1,0 +1,30 @@
+[project]
+name = "ai-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv",
+    "anthropic>=0.18.0",
+    "pydantic",
+    "httpx",
+    "streamlit",
+    "cryptography",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "mcp>=1.0.0",
+    "fastapi",
+    "uvicorn",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["agent*", "llm*", "tool_framework*", "mcp_client*", "config_service*", "memory*", "message_logger*", "data*", "ai_devs_4*", "tools*", "log_viewer*", "streamlit_ui*"]
+
+[tool.pyrefly]
+search-path = ["src", "."]
+python-interpreter-path = ".conda/bin/python"
