@@ -78,27 +78,7 @@ An AI agent built on the **ReAct** (Reasoning + Acting) pattern. The agent itera
 │   ├── settings.py                     # Configuration UI
 │   ├── client_factory.py               # LLM client instantiation
 │   └── constants.py                    # Tool registry organized by category
-├── mcp_servers/
-│   ├── weather_server.py               # Weather MCP server (Open-Meteo API)
-│   ├── fetch_url_server.py             # URL/HTML/Markdown fetcher MCP server
-│   ├── packages_server.py              # Package tracking MCP server
-│   ├── calculator_server.py            # Calculator MCP server
-│   ├── analyze_image_server.py         # Vision analysis MCP server backed by Gemini
-│   ├── oko_readonly_server.py          # Read-only OKO incident/task/notes MCP server
-│   ├── send_aidevs_server.py           # AI Devs answer submission MCP server
-│   ├── e2b_server.py                   # Isolated code execution sandbox via E2B
-│   └── sleep_server.py                 # Utility wait/sleep MCP server
-├── log_viewer/
-│   ├── server.py                       # FastAPI dashboard backend
-│   ├── runner.py                       # AI Devs exercise process runner
-│   ├── parser.py                       # Log line classification helpers
-│   ├── tail.py                         # File/process streaming utilities
-│   └── templates/viewer.html           # Dashboard UI
-├── ai_devs_4/                          # Task-specific experiments, prompts, tools, and MCP configs
-├── app.py                              # CLI/demo entry point
 ├── streamlit_app.py                    # Thin wrapper around `streamlit_ui.app`
-├── mcp_config.json                     # Default MCP server configuration
-├── run_log_viewer.sh                   # Starts the FastAPI log viewer/dashboard
 ├── pyproject.toml                      # Package metadata and setuptools config
 ├── pyrightconfig.json                  # Type-checker configuration
 └── requirements.txt                    # Runtime dependencies
