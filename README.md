@@ -434,12 +434,6 @@ pip install -r requirements.txt
 ## Running
 
 ```bash
-# CLI / demo entry point
-python app.py
-
 # Web UI
 streamlit run streamlit_app.py
-
-# Log viewer / AI Devs dashboard
-./run_log_viewer.sh
 ```
