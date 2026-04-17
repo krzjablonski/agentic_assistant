@@ -227,59 +227,6 @@ async with MCPManager("mcp_config.json") as mcp:
 
 Each server entry specifies a `command`, `args`, and optional `env` dict. The repository ships with more MCP servers than the default config enables.
 
-**Bundled MCP servers** (in `mcp_servers/`):
-
-| Server                 | Tool(s)                                      | Description                                 |
-| ---------------------- | -------------------------------------------- | ------------------------------------------- |
-| `weather_server`       | `check_weather`                              | Current weather via Open-Meteo API          |
-| `fetch_url_server`     | `fetch_url`, `fetch_url_as_markdown`         | Async HTTP fetcher with Markdown conversion |
-| `packages_server`      | `check_package`, `redirect_package`          | Package tracking & redirection              |
-| `calculator_server`    | `calculate`                                  | Math expression evaluator                   |
-| `analyze_image_server` | `analyze_image`                              | Vision analysis for remote images           |
-| `oko_readonly_server`  | `find_records`, `list_records`, `get_record` | Read-only OKO incident/task/notes access    |
-| `send_aidevs_server`   | `send_ai_devs_answer`                        | Submit answers to the AI Devs API           |
-| `e2b_server`           | sandbox, command, and file tools             | Isolated shell/code execution via E2B       |
-| `sleep_server`         | `sleep`                                      | Simple wait utility for agent workflows     |
-
-### E2B Sandbox Server
-
-The repository now includes an MCP server backed by **E2B** for isolated code execution. It gives the agent a dedicated remote Linux sandbox with file upload/download and shell command execution.
-
-The default `mcp_config.json` now includes `e2b` alongside the existing bundled servers:
-
-```json
-{
-  "mcpServers": {
-    "e2b": {
-      "command": "python",
-      "args": ["mcp_servers/e2b_server.py"]
-    },
-    "packages": {
-      "command": "python",
-      "args": ["mcp_servers/packages_server.py"]
-    },
-    "weather": {
-      "command": "python",
-      "args": ["mcp_servers/weather_server.py"]
-    }
-  }
-}
-```
-
-Before using it, install dependencies and set:
-
-```bash
-export E2B_API_KEY=your_api_key_here
-```
-
-Main tool groups exposed by `e2b_server.py`:
-
-- Sandbox lifecycle: `create_sandbox`, `connect_sandbox`, `get_sandbox_info`, `set_sandbox_timeout`, `kill_sandbox`
-- Shell execution: `run_command`, `start_command`, `get_command_status`, `wait_for_command`, `send_command_stdin`, `kill_command`
-- Filesystem: `write_file`, `read_file`, `list_files`, `get_path_info`, `make_directory`, `rename_path`, `delete_path`
-
-For file transfer, use `encoding="text"` for UTF-8 text and `encoding="base64"` for binary payloads. This maps directly to the E2B Python SDK filesystem APIs documented in the official E2B docs.
-
 ### Agent Status
 
 ```python
