@@ -7,11 +7,15 @@ import streamlit as st
 from agent.agent_event import AgentEvent, AgentEventType
 from config_service import config_service
 from memory.long_term_memory import LongTermMemory
-from streamlit_ui.async_runtime import AsyncRuntime
+from personal_ops.agent_profiles import INBOX_TRIAGE_WORKFLOW_ID
+from personal_ops.async_runtime import AsyncRuntime
+from personal_ops.inbox_triage.report import append_inbox_triage_report
 from streamlit_ui.chat_input import handle_chat_input
-from streamlit_ui.chat_view import render_chat_history
+from streamlit_ui.chat_view import render_chat_history, render_live_agent_activity
 from streamlit_ui.settings import render_password_dialog, render_settings_page
-from streamlit_ui.sidebar import render_chat_sidebar, render_sidebar
+from streamlit_ui.sidebar import AGENT_LIVE_LOG_KEY, render_chat_sidebar, render_sidebar
+
+LIVE_REFRESH_SECONDS = 0.5
 
 
 def _ensure_session_state() -> None:
@@ -19,6 +23,10 @@ def _ensure_session_state() -> None:
         st.session_state.messages = []
     if "agent" not in st.session_state:
         st.session_state.agent = None
+    if "agent_signature" not in st.session_state:
+        st.session_state.agent_signature = None
+    if "active_profile_id" not in st.session_state:
+        st.session_state.active_profile_id = None
     if "prev_client_type" not in st.session_state:
         st.session_state.prev_client_type = None
     if "event_logs" not in st.session_state:
@@ -93,6 +101,24 @@ def _sync_pending_run() -> bool:
         )
         assistant_message["meta"]["status"] = result.status
         assistant_message["meta"]["iterations"] = result.iterations
+        if result.log_path:
+            assistant_message["meta"]["log_path"] = result.log_path
+        if result.jsonl_path:
+            assistant_message["meta"]["jsonl_path"] = result.jsonl_path
+
+        if assistant_message.get("workflow_id") == INBOX_TRIAGE_WORKFLOW_ID:
+            try:
+                report_result = append_inbox_triage_report(
+                    result.response,
+                    params=assistant_message.get("workflow_params"),
+                )
+                assistant_message["meta"]["report_path"] = str(report_result.path)
+                if report_result.structured_validation_warning:
+                    assistant_message["meta"]["report_validation_warning"] = (
+                        report_result.structured_validation_warning
+                    )
+            except Exception as exc:
+                assistant_message["meta"]["report_error"] = str(exc)
 
         short_term_memory = st.session_state.get("short_term_memory")
         if short_term_memory is not None and result.usage:
@@ -115,12 +141,26 @@ def _sync_pending_run() -> bool:
 
 
 def _render_chat_panel() -> None:
-    run_every = 1 if st.session_state.get("pending_run") is not None else None
+    run_every = (
+        LIVE_REFRESH_SECONDS
+        if st.session_state.get("pending_run") is not None
+        else None
+    )
 
     @st.fragment(run_every=run_every)
     def _chat_panel_fragment() -> None:
         run_finished = _sync_pending_run()
-        render_chat_history(st.session_state.messages, st.session_state.event_logs)
+        show_debug = st.session_state.get(AGENT_LIVE_LOG_KEY, False)
+        render_chat_history(
+            st.session_state.messages,
+            st.session_state.event_logs,
+            show_debug,
+        )
+        pending_run = st.session_state.get("pending_run")
+        if pending_run is not None and show_debug:
+            events = st.session_state.event_logs[pending_run.event_log_index]
+            st.divider()
+            render_live_agent_activity(events)
         handle_chat_input()
         if run_finished:
             st.rerun()

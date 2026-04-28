@@ -1,1 +1,10 @@
-{}
+{
+    "mcpServers": {
+        "e2b": {
+            "command": "python",
+            "args": [
+                "mcp_servers/e2b_server.py"
+            ]
+        }
+    }
+}

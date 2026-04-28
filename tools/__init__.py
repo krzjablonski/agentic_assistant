@@ -1,6 +1,7 @@
 from tool_framework.i_tool import ITool, ToolParameter, ToolResult
 from tool_framework.tool_collection import ToolCollection
 from tools.create_calendar_event_tool import CreateCalendarEventTool
+from tools.create_draft_email_tool import CreateDraftEmailTool
 from tools.current_date import CurrentDateTool
 from tools.download_attachments_tool import DownloadAttachmentsTool
 from tools.edit_calendar_event_tool import EditCalendarEventTool
@@ -24,6 +25,7 @@ __all__ = [
     "ToolResult",
     "ToolCollection",
     "CreateCalendarEventTool",
+    "CreateDraftEmailTool",
     "CurrentDateTool",
     "DownloadAttachmentsTool",
     "EditCalendarEventTool",

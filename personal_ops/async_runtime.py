@@ -4,14 +4,23 @@ import asyncio
 import threading
 from concurrent.futures import Future
 from dataclasses import dataclass
-from typing import Any, Coroutine, Optional, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Coroutine, Optional, TypeVar
 
 from agent.agent_event import AgentEvent, AgentEventType
+from agent.message_factory import message_from_dict
 from agent.simple_agent.simple_agent import SimpleAgent
 from memory.short_term_memory import ShortTermMemory
 from message_logger.agent_event_subscriber import AgentEventSubscriber
+from message_logger.session_logger import SessionLogger
+
+if TYPE_CHECKING:
+    from typing import Type
+
+    from pydantic import BaseModel
 
 T = TypeVar("T")
+RUN_LOG_DIR = Path(__file__).resolve().parents[1] / "src" / "data" / "agent_runs"
 
 
 class AsyncRuntime:
@@ -23,7 +32,7 @@ class AsyncRuntime:
         self._stopped = False
         self._thread = threading.Thread(
             target=self._run_loop,
-            name="streamlit-ui-async-runtime",
+            name="personal-ops-async-runtime",
             daemon=True,
         )
         self._thread.start()
@@ -82,6 +91,8 @@ class AgentRunResult:
     iterations: int
     events: list[AgentEvent]
     usage: Optional[dict]
+    log_path: Optional[str] = None
+    jsonl_path: Optional[str] = None
 
 
 @dataclass
@@ -103,19 +114,37 @@ def extract_latest_usage(events: list[AgentEvent]) -> Optional[dict]:
     return None
 
 
+def _create_session_logger(agent: SimpleAgent) -> SessionLogger:
+    logger = SessionLogger(session_id=agent.session_id, log_dir=RUN_LOG_DIR)
+    logger.log_system_prompt(agent.system_prompt, agent_name=agent.name)
+    return logger
+
+
+def _log_input_messages(logger: SessionLogger, messages: list[dict]) -> None:
+    for message in messages:
+        logger.log_message(message_from_dict(message))
+
+
 async def run_agent_turn(
     agent: SimpleAgent,
     messages: list[dict],
     short_term_memory: Optional[ShortTermMemory],
     subscriber: EventBufferSubscriber,
+    response_schema: Optional["Type[BaseModel]"] = None,
 ) -> AgentRunResult:
+    session_logger = _create_session_logger(agent)
     agent.subscribe(subscriber)
+    agent.subscribe(session_logger)
     try:
         processed_messages = messages
         if short_term_memory is not None:
             processed_messages = await short_term_memory.process_messages(messages)
 
-        response = await agent.run(processed_messages)
+        _log_input_messages(session_logger, processed_messages)
+        response = await agent.run(
+            user_query=processed_messages,
+            response_schema=response_schema,
+        )  # type: ignore
         events = subscriber.snapshot()
         return AgentRunResult(
             response=response,
@@ -123,6 +152,9 @@ async def run_agent_turn(
             iterations=agent.iteration_count,
             events=events,
             usage=extract_latest_usage(events),
+            log_path=str(session_logger.log_path),
+            jsonl_path=str(session_logger.jsonl_path),
         )
     finally:
+        agent.unsubscribe(session_logger)
         agent.unsubscribe(subscriber)

@@ -202,3 +202,11 @@ class SessionLogger(AgentEventSubscriber):
                 f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
         except Exception as e:
             print(f"Warning: Could not write to JSONL log: {e}")
+
+    @property
+    def log_path(self) -> Path:
+        return self._log_path
+
+    @property
+    def jsonl_path(self) -> Path:
+        return self._jsonl_path

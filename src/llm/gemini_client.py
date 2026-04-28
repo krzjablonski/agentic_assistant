@@ -1,3 +1,4 @@
+from config_service import config_service
 import json
 import os
 import uuid
@@ -42,7 +43,8 @@ class GeminiClient(ILLMClient):
         api_key: Optional[str] = None,
         context_window: Optional[int] = None,
     ):
-        resolved_key = api_key or os.getenv("GEMINI_API_KEY")
+        self._config_service = config_service
+        resolved_key = api_key or self._config_service.get("llm.google_gemini_api_key")
         if not resolved_key:
             raise ValueError("GEMINI_API_KEY is not set. Add it to your .env file.")
         self.model = model
@@ -274,9 +276,7 @@ class GeminiClient(ILLMClient):
             elif isinstance(value, list):
                 result[key] = [
                     (
-                        self._sanitize_schema_for_gemini(
-                            item, in_properties=False
-                        )
+                        self._sanitize_schema_for_gemini(item, in_properties=False)
                         if isinstance(item, dict)
                         else item
                     )

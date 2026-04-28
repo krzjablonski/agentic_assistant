@@ -1,3 +1,4 @@
+import html
 import re
 import imaplib
 import email
@@ -7,10 +8,32 @@ from tool_framework.i_tool import ITool, ToolResult, ToolParameter
 from config_service import config_service
 
 
+_BLOCK_TAGS = "br|p|div|li|tr|h[1-6]|ol|ul"
+_SCRIPT_RE = re.compile(
+    r"<script\b[^>]*>.*?</script>", flags=re.DOTALL | re.IGNORECASE
+)
+_STYLE_RE = re.compile(
+    r"<style\b[^>]*>.*?</style>", flags=re.DOTALL | re.IGNORECASE
+)
+_ANCHOR_RE = re.compile(
+    r'<a\b[^>]*?href\s*=\s*["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_BLOCK_TAG_RE = re.compile(
+    rf"</?\s*(?:{_BLOCK_TAGS})\b[^>]*>", flags=re.IGNORECASE
+)
+_TAG_RE = re.compile(r"<[^>]+>")
+_TRAILING_WS_RE = re.compile(r"[ \t]+\n")
+_MULTI_NL_RE = re.compile(r"\n{3,}")
+
+
 class ReadEmailTool(ITool):
     IMAP_SERVER = "imap.gmail.com"
     IMAP_PORT = 993
-    MAX_BODY_LENGTH = 500
+    DEFAULT_MAX_BODY_CHARS = 2000
+    MIN_BODY_CHARS = 200
+    MAX_BODY_CHARS = 20000
+    PLAIN_STUB_THRESHOLD = 40
     MAX_EMAILS = 1000
 
     def __init__(self):
@@ -50,6 +73,17 @@ class ReadEmailTool(ITool):
                         '"SUBJECT meeting", "SINCE 10-Feb-2026"'
                     ),
                 ),
+                ToolParameter(
+                    name="max_body_chars",
+                    type="integer",
+                    required=False,
+                    default=self.DEFAULT_MAX_BODY_CHARS,
+                    description=(
+                        "Maximum body length per email in characters "
+                        "(default 2000). Clamped to [200, 20000]. "
+                        "Bodies longer than this are truncated with a marker."
+                    ),
+                ),
             ],
         )
 
@@ -60,8 +94,14 @@ class ReadEmailTool(ITool):
         count = parameters.get("count", 5)
         folder = parameters.get("folder", "INBOX")
         search_criteria = parameters.get("search_criteria", "ALL")
+        max_body_chars = parameters.get(
+            "max_body_chars", self.DEFAULT_MAX_BODY_CHARS
+        )
 
         count = max(1, min(count, self.MAX_EMAILS))
+        max_body_chars = max(
+            self.MIN_BODY_CHARS, min(max_body_chars, self.MAX_BODY_CHARS)
+        )
 
         user = config_service.get("email.from")
         app_password = config_service.get("email.app_password")
@@ -121,7 +161,7 @@ class ReadEmailTool(ITool):
                 if status == "OK":
                     raw_bytes = msg_data[0][1]
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
-                    parsed = self._parse_email(raw_bytes, uid_str)
+                    parsed = self._parse_email(raw_bytes, uid_str, max_body_chars)
                     emails.append(parsed)
 
             mail.logout()
@@ -138,7 +178,7 @@ class ReadEmailTool(ITool):
             for i, em in enumerate(emails):
                 body_parts.append(self._format_email(em, i + 1, len(emails)))
 
-            result_text = header + "\n".join(body_parts) + "\n--- End of results ---"
+            result_text = header + "\n\n".join(body_parts) + "\n--- End of results ---"
 
             return ToolResult(
                 tool_name=self.name,
@@ -159,7 +199,7 @@ class ReadEmailTool(ITool):
                 result=f"Error: Failed to read emails - {str(e)}",
             )
 
-    def _parse_email(self, raw_bytes: bytes, uid: str) -> dict:
+    def _parse_email(self, raw_bytes: bytes, uid: str, max_body_chars: int) -> dict:
         msg = email.message_from_bytes(raw_bytes)
         return {
             "uid": uid,
@@ -167,7 +207,7 @@ class ReadEmailTool(ITool):
             "to": self._decode_header_value(msg.get("To", "")),
             "date": msg.get("Date", ""),
             "subject": self._decode_header_value(msg.get("Subject", "(No Subject)")),
-            "body": self._get_body(msg),
+            "body": self._get_body(msg, max_body_chars),
             "attachments": self._get_attachment_names(msg),
         }
 
@@ -181,20 +221,22 @@ class ReadEmailTool(ITool):
                 decoded_parts.append(part)
         return " ".join(decoded_parts)
 
-    def _get_body(self, msg: email.message.Message) -> str:
+    def _get_body(self, msg: email.message.Message, max_body_chars: int) -> str:
         if msg.is_multipart():
             text_part = None
             html_part = None
             for part in msg.walk():
-                content_type = part.get_content_type()
+                if part.is_multipart():
+                    continue
                 disposition = str(part.get("Content-Disposition", ""))
                 if "attachment" in disposition:
                     continue
+                content_type = part.get_content_type()
                 if content_type == "text/plain" and text_part is None:
                     text_part = part
                 elif content_type == "text/html" and html_part is None:
                     html_part = part
-            target = text_part or html_part
+            target = self._select_multipart_target(text_part, html_part)
             if target is None:
                 return "[No readable content]"
         else:
@@ -211,18 +253,45 @@ class ReadEmailTool(ITool):
             text = self._strip_html(text)
 
         text = text.strip()
-        if len(text) > self.MAX_BODY_LENGTH:
+        if len(text) > max_body_chars:
             text = (
-                text[: self.MAX_BODY_LENGTH]
-                + f"\n[Body truncated at {self.MAX_BODY_LENGTH} chars]"
+                text[:max_body_chars]
+                + f"\n[... body truncated at {max_body_chars} chars — re-fetching will return the same content]"
             )
         return text
 
-    def _strip_html(self, html: str) -> str:
-        text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
+    def _select_multipart_target(self, text_part, html_part):
+        if text_part is not None and html_part is not None:
+            charset = text_part.get_content_charset() or "utf-8"
+            payload = text_part.get_payload(decode=True)
+            if payload is not None:
+                decoded = payload.decode(charset, errors="replace").strip()
+                if len(decoded) < self.PLAIN_STUB_THRESHOLD:
+                    return html_part
+            return text_part
+        return text_part or html_part
+
+    def _strip_html(self, html_str: str) -> str:
+        text = _SCRIPT_RE.sub("", html_str)
+        text = _STYLE_RE.sub("", text)
+        text = _ANCHOR_RE.sub(self._anchor_repl, text)
+        text = _BLOCK_TAG_RE.sub("\n", text)
+        text = _TAG_RE.sub("", text)
+        text = html.unescape(text)
+        text = text.replace("\xa0", " ")
+        text = _TRAILING_WS_RE.sub("\n", text)
+        text = _MULTI_NL_RE.sub("\n\n", text)
         return text.strip()
+
+    @staticmethod
+    def _anchor_repl(match: re.Match) -> str:
+        url = match.group(1).strip()
+        inner = match.group(2)
+        inner_text = _TAG_RE.sub("", inner).strip()
+        inner_text = html.unescape(inner_text)
+        if not inner_text or inner_text == url:
+            return url
+        return f"{inner_text} ({url})"
 
     def _get_attachment_names(self, msg: email.message.Message) -> list[str]:
         names = []
@@ -244,5 +313,4 @@ class ReadEmailTool(ITool):
             lines.append(f"[Attachments: {', '.join(parsed['attachments'])}]")
         lines.append("")
         lines.append(parsed["body"])
-        lines.append("")
         return "\n".join(lines)
